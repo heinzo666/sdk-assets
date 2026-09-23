@@ -16,9 +16,11 @@ STATUS_P = os.path.join(HERE, 'status.json')
 
 EPS = {
     'eth': ['https://ethereum-rpc.publicnode.com', 'https://eth-mainnet.public.blastapi.io',
-            'https://rpc.flashbots.net', 'https://eth.drpc.org'],
-    'bsc': ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.binance.org',
-            'https://bsc.blockrazor.xyz', 'https://bsc.drpc.org'],
+            'https://rpc.flashbots.net', 'https://eth.llamarpc.com', 'https://1rpc.io/eth',
+            'https://eth.drpc.org'],
+    'bsc': ['https://bsc-dataseed.binance.org', 'https://bsc-dataseed1.defibit.io',
+            'https://binance.llamarpc.com', 'https://bsc.blockrazor.xyz',
+            'https://1rpc.io/bnb', 'https://bsc-pokt.nodies.app'],
 }
 FRESH_CALLER = '0x00000000000000000000000000000000DeadBEEF'
 WD40 = FRESH_CALLER[2:].lower()
@@ -79,7 +81,11 @@ EPX = Ep()
 
 def rpc_once(url, method, params, timeout=18):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    req = Request(url, data=body, headers={'Content-Type': 'application/json'})
+    req = Request(url, data=body, headers={
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                      '(KHTML, like Gecko) Chrome/124.0 Safari/537.36'})
     with urlopen(req, timeout=timeout) as r:
         j = json.load(r)
     if isinstance(j, dict) and j.get('error'):
@@ -96,8 +102,9 @@ def rpc(ch, method, params, tries=3):
         except Exception as e:
             last = str(e)[:70]
             msg = last.lower()
-            if any(x in msg for x in ('rate', 'limit', 'too many', 'timeout', 'capacity', '502', '503')):
-                EPX.mark_bad(ch, ep)
+            if any(x in msg for x in ('403', 'forbid', 'rate', 'limit', 'too many', 'timeout',
+                                      'capacity', '502', '503', 'unauthor')) :
+                EPX.mark_bad(ch, ep, secs=150)
             time.sleep(0.25 * (k + 1))
     raise RuntimeError(last or 'fail')
 
@@ -287,7 +294,26 @@ def refresh_watch_prices(stats):
     pass
 
 
+import fcntl
+
+
+_LOCKFH = None
+
+
+def _single_instance():
+    global _LOCKFH
+    _LOCKFH = open(os.path.join(HERE, 'run.lock'), 'w')
+    try:
+        fcntl.flock(_LOCKFH, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except Exception:
+        return False
+
+
 def main():
+    if not _single_instance():
+        print('[sw] another instance holds the lock, exiting', flush=True)
+        return
     outlock = threading.Lock()
     state = load_json(STATE_P, {'cursor': {}, 'seen': {}, 'watch': [],
                                 'known_hits': 0, 'cycles': 0})
