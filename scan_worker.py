@@ -340,13 +340,10 @@ def main():
             span_back = 4200 if ch == 'eth' else 19000
             lo_default = max(1, head - span_back)
             cur = int(cur) if cur else lo_default
-            if cur > head - 800:      # behind enough? normal path scans next window
-                lo = min(cur + 900, head)
-                hi = min(lo + 899, head)
-            else:
-                lo, hi = cur + 901, min(cur + 1800, head)
-            if lo > head:
-                lo, hi = lo_default, min(lo_default + 449, head)
+            # adaptive catch-up: big strides when far behind, small near head
+            step = max(250, min(4200, max(120, head - cur)))
+            lo = min(head, cur + 2)
+            hi = min(head, lo + step - 1)
             bn_list = list(range(hi, lo - 1, -1))[:BN_BATCH]
             print(f'[sw] {ch} window {lo}-{hi} blocks={len(bn_list)}', flush=True)
 
